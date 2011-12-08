@@ -8,8 +8,6 @@
 
 <b>Constraint Info </b> :  
 <br/>
-Constraint Name :  <i>${requestScope.constraintObj.name}</i>
-<br/> 
-Constraint Value :  <i>${constraintObj.valueToCheck} </i>
-<br/> 
+<b>Name : </b> <i>${requestScope.constraintObj.name}</i> | 
+<b>Value : </b><i>${constraintObj.valueToCheck} </i>
 <%--Constraint Class : <i>${constraintObj}  </i>--%>

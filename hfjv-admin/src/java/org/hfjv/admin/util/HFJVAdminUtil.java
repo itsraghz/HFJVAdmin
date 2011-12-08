@@ -43,6 +43,10 @@ public class HFJVAdminUtil
     
     private static ArrayList<String> hfjvConstraintList = null;
     
+    private static ArrayList<String> listOfModules = null;
+    private static LinkedHashMap<String, ArrayList<String>> moduleFieldMap = null;
+    
+    
     static {
         //cloneFieldNameMap();
         initHFJVFieldTypeList();
@@ -133,7 +137,7 @@ public class HFJVAdminUtil
     
     public static void log(String msg)
     {
-        System.out.println(msg);
+        logger.info(msg);
     }
     
     /**
@@ -184,7 +188,7 @@ public class HFJVAdminUtil
     {
         final String THIS_METHOD_NAME = "["+getClassName()+"] writeHFJVConstraintsToFile() - ";
         
-        logger.debug(THIS_METHOD_NAME);
+        logger.enter(THIS_METHOD_NAME);
         
         boolean isWriteSuccess = true;
         
@@ -298,7 +302,7 @@ public class HFJVAdminUtil
     
     public static ArrayList<String> getListOfModules()
     {
-        return getListOfModules(false);
+        return getListOfModules(true);
     }
     
     private static ArrayList<String> getListOfModules(boolean forGUI)
@@ -370,11 +374,12 @@ public class HFJVAdminUtil
         
         /* Repeat this for each module */ 
         ArrayList<String> listOfFields = null;
-        StringBuilder fieldNameBldr = null;
+        
+        StringBuilder fieldNameBldr = null;        
         
         for (String module : getListOfModules(false)) 
         {
-            listOfFields = getListOfFields(module, false);
+            listOfFields = getListOfFields(module);
             
             if(CollectionUtil.isInvalidList(listOfFields))
             {
@@ -402,9 +407,7 @@ public class HFJVAdminUtil
             }            
             
             /* End of iteration of a module, so add it */
-            hfjvFieldsStrBldr.append(fieldNameBldr.toString());
-            hfjvFieldsStrBldr.append(getLineSeparatorChar());
-            
+            hfjvFieldsStrBldr.append(fieldNameBldr.toString());               
         }
         
         logger.info(THIS_METHOD_NAME + "HFJV Fields are prepared...");
@@ -420,54 +423,123 @@ public class HFJVAdminUtil
         
         logger.enter(THIS_METHOD_NAME);
         
-        StringBuilder hfjvFieldAttributesStrBldr = new StringBuilder();
+        LinkedHashMap<String, LinkedHashMap<Field, ArrayList<Constraint>>> 
+                moduleFieldConstraintListMap = 
+                        ValidatorAssembler.getModuleFieldsConstraintListMap();
         
-        /* Repeat this for each module */ 
-        ArrayList<String> listOfFields = null;
-        StringBuilder fieldNameBldr = null;
+        LinkedHashMap<Field, ArrayList<Constraint>> fieldConstraintMap = null;
+        ArrayList<Constraint> listOfConstraintsForField = null;
         
-        StringBuilder constraintBldr = null;
+        Set<String> keySetForModuleFieldConstraintMap = moduleFieldConstraintListMap.keySet();
         
-        for (String module : getListOfModules(false)) 
+        Set<Field> keySetForFieldConstraintMap = null;
+
+        StringBuilder fieldAttrBldr = new StringBuilder();
+        StringBuilder tempFieldAttrBldr = new StringBuilder();
+        String hfjvKeyAttributePattern = null;
+        String tempConstraintName = null;
+
+        /** Iterate each module, and each field per module */        
+        for (String moduleKeyInMap : keySetForModuleFieldConstraintMap) 
         {
-            listOfFields = getListOfFields(module, false);
+            log(THIS_METHOD_NAME + " >>> preparing attributes for module : '"+moduleKeyInMap+"'");
             
-            if(CollectionUtil.isInvalidList(listOfFields))
+            /* Repeat for each module */            
+            fieldConstraintMap = moduleFieldConstraintListMap.get(moduleKeyInMap);
+            
+            keySetForFieldConstraintMap = fieldConstraintMap.keySet();
+            
+            /* Repeat for each field */            
+            for (Field fieldKeyInMap : keySetForFieldConstraintMap) 
             {
-                continue;
-            }
-            
-            hfjvFieldAttributesStrBldr.append(getLineSeparatorChar());
+                log(THIS_METHOD_NAME + " >>> *** preparing attributes for field : '"+fieldKeyInMap+"'");
+                
+                /* For efficiency in terms of memory, recreate one at every step */
+                /* At the end of the iteration, this reference will be nullified for GC */
+                tempFieldAttrBldr = new StringBuilder();
+                
+                tempFieldAttrBldr.append(getLineSeparatorChar());
+                tempFieldAttrBldr.append(getCommentCharWithSpace());
+                
+                tempFieldAttrBldr.append("List of attributes for field ")
+                             .append(moduleKeyInMap).append("-")
+                             .append(fieldKeyInMap.getDisplayName());
+                
+                tempFieldAttrBldr.append(getLineSeparatorChar());
+                
+                /**
+                 * Fill in the field attributes 
+                 */         
+                
+                /* append hfjv.<moduleName>.<fieldName>. */
+                hfjvKeyAttributePattern = getHFJVKeyAttributePattern(
+                                        moduleKeyInMap, fieldKeyInMap);
+                
+                tempFieldAttrBldr.append(hfjvKeyAttributePattern);
+                
+                /* append '.type=' */
+                tempFieldAttrBldr.append("type")
+                             .append(getEqualsSymbol());
+                
+                //if(StringUtil.isValidString(fieldKeyInMap.getType()))
+                //{
+                     tempFieldAttrBldr.append(fieldKeyInMap.getType());
+                //}
+                
+                tempFieldAttrBldr.append(getLineSeparatorChar());
+                
+                listOfConstraintsForField = fieldConstraintMap.get(fieldKeyInMap);
+                
+                if(CollectionUtil.isInvalidList(listOfConstraintsForField))
+                {
+                    continue;
+                }
+                
+                /** Iterate each constraint for the field */
+                for (Constraint constraint : listOfConstraintsForField) 
+                {
+                    log(THIS_METHOD_NAME + "  *** ### preparing attributes for constraint : '"+constraint.getClass().getSimpleName()+"'");                    
                     
-            hfjvFieldAttributesStrBldr.append(getCommentCharWithSpace());
-            hfjvFieldAttributesStrBldr.append("List of fields for the module '")
-                             .append(module).append("' separated by comma");
-            hfjvFieldAttributesStrBldr.append(getLineSeparatorChar());
-            hfjvFieldAttributesStrBldr.append(getHFJVFieldsKeyWithEquals(module));
-
-            /* Get the keys for each module */
-            fieldNameBldr = new StringBuilder();
-
-            int i = 0;
-            int count = listOfFields.size();
-
-            for (String field : listOfFields) 
-            {
-                fieldNameBldr.append( 
-                        (++i < count) ? appendWithChar(field,",") : field);
-            }            
-            
-            /* End of iteration of a module, so add it */
-            hfjvFieldAttributesStrBldr.append(fieldNameBldr.toString());
-            hfjvFieldAttributesStrBldr.append(getLineSeparatorChar());
-            
+                    /* fill in the 'hfjv.<module>.<key>.' */
+                    tempFieldAttrBldr.append(hfjvKeyAttributePattern);
+                    
+                    /* 
+                     * Get the constraintName lowered, as otherwise it would 
+                     * NOT be properly read by HFJV later when they feed it
+                     */
+                    tempConstraintName = constraint.getClass().getSimpleName();
+                    tempConstraintName = getLowerCase(tempConstraintName, 0);
+                    
+                    /* fill the 'constraint=<constraintValue>' */
+                    tempFieldAttrBldr.append(tempConstraintName)
+                                 .append(getEqualsSymbol())
+                                 .append(constraint.getValueToCheck());
+                    /* add a line separator for each constraint */
+                    tempFieldAttrBldr.append(getLineSeparatorChar());
+                }
+                
+                log("");
+                log(THIS_METHOD_NAME + " COMPLETED attribute for field so far : ");
+                log(tempFieldAttrBldr.toString());
+                log("");
+                
+                fieldAttrBldr.append(tempFieldAttrBldr);
+                
+                /* Make it point to null, so that it can be eligible for GC */
+                tempFieldAttrBldr = null;
+            }
         }
+                
+        logger.info(THIS_METHOD_NAME + "HFJV Field Attributes & constraints are prepared...");
         
-        logger.info(THIS_METHOD_NAME + "HFJV Field Attributes are prepared...");
+        logger.info(THIS_METHOD_NAME + "=========================================");
+        logger.info(THIS_METHOD_NAME + " :: hfjv Field Attribute :: ");
+        logger.info(fieldAttrBldr.toString());
+        logger.info(THIS_METHOD_NAME + "=========================================");
         
         logger.exit(THIS_METHOD_NAME);
         
-        return hfjvFieldAttributesStrBldr.toString();
+        return fieldAttrBldr.toString();
     }
 
     
@@ -479,7 +551,7 @@ public class HFJVAdminUtil
         
         StringBuilder hfjvModulesStrBldr = new StringBuilder();
         
-        ArrayList<String> listOfModules = getListOfModules(false);
+        listOfModules = getListOfModules(false);
         
         /* For a safer side */
         removeNullIfPresent(listOfModules);
@@ -498,7 +570,6 @@ public class HFJVAdminUtil
         hfjvModulesStrBldr.append(" List of modules separated by comma");
         hfjvModulesStrBldr.append(getLineSeparatorChar());
         hfjvModulesStrBldr.append(getHFJVModulesKeyWithEquals());
-        
         
         StringBuilder moduleNameBldr = new StringBuilder();
         
@@ -523,6 +594,24 @@ public class HFJVAdminUtil
     public static String appendWithChar(String inputStr, String charToAppend)
     {
         return inputStr + charToAppend;
+    }
+    
+    public static String getHFJVKeyAttributePattern(String moduleName, Field fieldObj)
+    {
+        StringBuilder sb = new StringBuilder();
+        
+        sb.append(getHFJVBaseKeyWithSeparator())
+          .append(moduleName)
+          .append(getHFJVKeySeparator())
+          .append(fieldObj.getDisplayName())
+          .append(getHFJVKeySeparator());
+        
+        return sb.toString();
+    }
+    
+    public static String getHFJVBaseKeyWithSeparator()
+    {
+        return getHFJVBaseKey()+getHFJVKeySeparator();
     }
     
     public static String getHFJVBaseKey()
@@ -590,6 +679,21 @@ public class HFJVAdminUtil
         logger.exit(THIS_METHOD_NAME);
         
         return hfjvHeaderBldr.toString();
+    }
+    
+    public static String getLowerCase(String str, int position)
+    {
+        if(position < 0 || StringUtil.isInvalidString(str))
+        {
+            return str;
+        }
+        
+        StringBuilder sb = new StringBuilder(str);
+        
+        sb.replace(position, position+1, 
+                String.valueOf(Character.toLowerCase(str.charAt(position))));
+        
+        return sb.toString();
     }
     
     private static int getHFJVHeaderCharLength()
@@ -694,9 +798,26 @@ public class HFJVAdminUtil
         listOfConstraints = listOfConstraintsCloned;
     }
     
+    public static void testGetLowerCase()
+    {
+        String str = "MinDigitConstraint";
+        
+        int position = 0;
+        log("getLowerCase of str '"+str+"' at position('"+position+"') :" +
+                getLowerCase(str, position));
+        
+        position = 3;
+        log("getLowerCase of str '"+str+"' at position('"+position+"') :" +
+                getLowerCase(str, position));
+        
+    }
+    //TODO: Remove all testing related methods including main
     public static void main(String... args) 
     throws FileNotFoundException
     {
+        /*testGetLowerCase();
+        System.exit(0);*/
+        
         //trialAndError();
         //testNullRemovals();
         

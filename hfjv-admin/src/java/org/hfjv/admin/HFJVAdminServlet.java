@@ -14,10 +14,12 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
+
 import org.hfjv.admin.util.HFJVAdminUtil;
 import org.hfjv.framework.Logger;
 import org.hfjv.framework.LoggerFactory;
 import org.hfjv.framework.core.constraint.Constraint;
+import org.hfjv.framework.core.constraint.mandatory.MandatoryConstraint;
 import org.hfjv.framework.core.exception.ValidatorException;
 import org.hfjv.framework.core.field.Field;
 import org.hfjv.framework.core.validator.assembler.ValidatorAssembler;
@@ -260,6 +262,7 @@ public class HFJVAdminServlet extends HttpServlet
         logger.enter(THIS_METHOD_NAME);
         
         String selectedConstraint = request.getParameter("selectedConstraint");
+        String selectedField = request.getParameter("selectedField");
 
         log(THIS_METHOD_NAME + "selectedConstraint : "+selectedConstraint);
 
@@ -285,6 +288,13 @@ public class HFJVAdminServlet extends HttpServlet
 
         putInRequest(request, "constraintObj", constraintObj);
         putInRequest(request, "selectedConstraint", constraintObj);
+        
+        /** 
+         * It is good to have the field related info while displaying the
+         * constraint details and also adding a constraint
+         */
+        putInSession(request, "selectedField", selectedField);
+        
 
         //getServletContext().getRequestDispatcher("/admin.jsp").forward(request, response); 
         
@@ -316,6 +326,8 @@ public class HFJVAdminServlet extends HttpServlet
         log(THIS_METHOD_NAME + "fieldWithModule : "+fieldWithModule);
 
         Field fieldObj = ValidatorAssembler.getFieldNameMap().get(fieldWithModule);
+        
+        log(THIS_METHOD_NAME + " :: fieldObj (longString) from Repo :: "+fieldObj.toLongString());
 
         LinkedHashMap<Field, ArrayList<Constraint>> fieldCheckMap = 
                             ValidatorAssembler.getFieldConstraintMap();
@@ -332,6 +344,31 @@ public class HFJVAdminServlet extends HttpServlet
         }
         
         log(THIS_METHOD_NAME + "fieldConstraintList : "+fieldConstraintList);
+        
+        /* =============================================================== */
+        /*      Evaluate and add 'MandatoryConstraint=No' - START          */
+        /*                                                                 */
+        /* Needed for HFJVAdmin for the existing properties, as the HFJV   */
+        /* updates the deferredEvaluation of field if it encounters an     */
+        /* optional validation (mandatoryConstraint=no) and ignores the    */
+        /* constraint in the fieldConstraintList of it.                    */
+        /* =============================================================== */
+        if(fieldObj.isDeferredEvaluation())
+        {
+            log(THIS_METHOD_NAME + "Looks like this field is an optional field. "
+             + "Adding an mandatoryConstraint to the list with the value 'no'");
+            
+            MandatoryConstraint mandatoryConstraintObj = new MandatoryConstraint();
+            mandatoryConstraintObj.setValueToCheck("No");
+            
+            fieldConstraintList.add(mandatoryConstraintObj);
+            
+            mandatoryConstraintObj = null;
+        }
+        /* =============================================================== */
+        /*      Evaluate and add 'MandatoryConstraint=No' - END            */
+        /* =============================================================== */
+        
         //log(THIS_METHOD_NAME + "collectionObj : "+collectionObj);
 
         /* For clarity, remove the typeConstraint if any before adding to session */
@@ -365,10 +402,17 @@ public class HFJVAdminServlet extends HttpServlet
         
         log(THIS_METHOD_NAME + "fieldConstraintList :: "+fieldConstraintList);
         
+        /* Needed in fieldList.jsp to show the attributes of selected field */
+        putInSession(request, "selectedFieldObj", fieldObj);
+        
         putInSession(request, "fieldConstraintList", fieldConstraintList);
         
         putInSession(request, "selectedField", selectedField);
         putInSession(request, "dependentFieldValueMap", dependentFieldValueMap);
+        
+        /* ------- Update HFJV Repo - START --------- */
+        fieldCheckMap.put(fieldObj, fieldConstraintList);
+        /* ------- Update HFJV Repo - END --------- */
         
         //getServletContext().getRequestDispatcher("/admin.jsp").forward(request, response);   
         
@@ -403,9 +447,9 @@ public class HFJVAdminServlet extends HttpServlet
         putInSession(request, "moduleList", HFJVAdminUtil.getListOfModules());
 
         putInSession(request, "fieldList", listOfFields);
-        removeFromSession(request, "fieldConstraintList");
-        removeFromSession(request, "dependentFieldValueMap");
-
+        
+        cleanUpOnGetFields(request,response);
+        
         //getServletContext().getRequestDispatcher("/admin.jsp").forward(request, response);
         
         logger.exit(THIS_METHOD_NAME);
@@ -463,8 +507,10 @@ public class HFJVAdminServlet extends HttpServlet
         
         log(THIS_METHOD_NAME + "updated listOfModules after null removal : "+listOfModules);
         
-        
         putInSession(request, "moduleList", listOfModules);
+        putInSession(request, "selectedModule", addedModule);
+        
+        cleanUpOnAddModule(request,response);
         
         //getServletContext().getRequestDispatcher("/admin.jsp").forward(request, response);
         
@@ -529,6 +575,7 @@ public class HFJVAdminServlet extends HttpServlet
         log(THIS_METHOD_NAME + "updated listOfFields after null removal : "+listOfFields);
         
         /* ====== Update in HFJV Repository - START ====== */
+        
         Field fieldObj = new Field(fieldNameToAdd);
         fieldObj.setDisplayName(fieldNameToAdd);
         
@@ -541,11 +588,16 @@ public class HFJVAdminServlet extends HttpServlet
         
         String selectedModule = (String) request.getSession().getAttribute("selectedModule");
         
+        ValidatorAssembler.getFieldNameMap().put(selectedModule+"-"+fieldNameToAdd, fieldObj);
+        
         ValidatorAssembler.getModuleFieldsMap().put(selectedModule, listOfFields);
+        
+        putInSession(request, "selectedFieldObjCreated", fieldObj);
         
         log(THIS_METHOD_NAME + "updated listOfFields in HFJV Repository!");
         
         /* ====== Update in HFJV Repository - END ====== */
+        
         putInSession(request, "fieldList", listOfFields);
         
         //getServletContext().getRequestDispatcher("/admin.jsp").forward(request, response);
@@ -587,16 +639,17 @@ public class HFJVAdminServlet extends HttpServlet
 
         Field fieldObj = ValidatorAssembler.getFieldNameMap().get(fieldWithModule);
 
-        LinkedHashMap<Field, ArrayList<Constraint>> fieldCheckMap = 
+        LinkedHashMap<Field, ArrayList<Constraint>> fieldConstraintMap = 
                             ValidatorAssembler.getFieldConstraintMap();
 
-        ArrayList<Constraint> fieldConstraintList =  fieldCheckMap.get(fieldObj);
+        ArrayList<Constraint> fieldConstraintList =  fieldConstraintMap.get(fieldObj);
         
         log(THIS_METHOD_NAME + "initial fieldConstraintList -> "+fieldConstraintList);
         
         if(CollectionUtil.isInvalidList(fieldConstraintList))
         {
-            log(THIS_METHOD_NAME + "Looks like the initial fieldConstraintList is null or empty. Instantiating one.");
+            log(THIS_METHOD_NAME + "Looks like the initial fieldConstraintList "+
+                                        "is null or empty. Instantiating one.");
             fieldConstraintList = new ArrayList<Constraint>();
         }
         else
@@ -644,16 +697,28 @@ public class HFJVAdminServlet extends HttpServlet
             return;
         }
         
+        /* ===== Update HFJV Repository - START ===== */
         fieldConstraintList.add(constraintObj);
                 
         log(THIS_METHOD_NAME + "updated constraintList : "+fieldConstraintList);
         
-        fieldCheckMap.put(fieldObj,fieldConstraintList);
+        fieldConstraintMap.put(fieldObj,fieldConstraintList);
+        
+        ValidatorAssembler.getModuleFieldsConstraintListMap().put(selectedModule,fieldConstraintMap);
+        
+        /* ===== Update HFJV Repository - END ===== */
         
         log(THIS_METHOD_NAME +
                "fieldConstraintList is updated on fieldCheckMap for the field!");
         
         putInSession(request, "fieldConstraintList", fieldConstraintList);
+
+        /** 
+         * It is good to have the field related info while displaying the
+         * constraint details and also adding a constraint
+         */
+        putInSession(request, "selectedField", selectedField);
+
         
         //getServletContext().getRequestDispatcher("/admin.jsp").forward(request, response);
         
@@ -722,6 +787,28 @@ public class HFJVAdminServlet extends HttpServlet
         
         /* Needed for addConstraint module */
         putInSession(request, "hfjvConstraintList", HFJVAdminUtil.getHFJVConstraintList());
+    }
+
+    private void cleanUpOnAddModule(HttpServletRequest request, HttpServletResponse response) 
+    {
+        removeSelectedFieldObjFromSession(request, response);
+    }
+    
+    private void cleanUpOnGetFields(HttpServletRequest request, HttpServletResponse response) 
+    {
+        removeSelectedFieldObjFromSession(request, response);
+        removeFromSession(request, "fieldConstraintList");
+        removeFromSession(request, "dependentFieldValueMap");
+    }
+    
+    private void cleanUpOnGetConstraints(HttpServletRequest request, HttpServletResponse response) 
+    {
+        //removeSelectedFieldObjFromSession(request, response);
+    }
+    
+    private void removeSelectedFieldObjFromSession(HttpServletRequest request, HttpServletResponse response)
+    {
+        removeFromSession(request, "selectedFieldObj");
     }
             
 }

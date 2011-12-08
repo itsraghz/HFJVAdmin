@@ -1,0 +1,11 @@
+List of known bugs
+===================
+1. At the very first launch, it behaves abnormally.
+2. The field attributes are tied up with the previous module and NOT for
+    the present module
+
+Enhancements
+============
+1. UI beautification using CSS
+2. Table formatting using displaytag (if appropriate), as jar files may be
+    an extra dependency

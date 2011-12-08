@@ -197,8 +197,13 @@
             <br/>		
             <jsp:include page="constraintInfo.jsp" />
         </c:if>
+        <c:if test="${not empty dependentFieldValueMap}">
+            <br/>
+            <jsp:include page="dependentFieldInfo.jsp"/>
+        </c:if>            
         <br/><br/>
-        <form name="exportHFJVForm" action="HFJVAdminServlet" method="post">            <input type="hidden" name="controlAction" value="export"/>
+        <form name="exportHFJVForm" action="HFJVAdminServlet" method="post">            
+            <input type="hidden" name="controlAction" value="export"/>
             <input type="submit" name="btnReqExport" value="Export"/>
         </form>
     </body>
